@@ -597,9 +597,6 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, VL53L0X_XSHUT_Pin|LED3_WIFI__LED4_BLE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SPSGRF_915_SPI3_CSN_GPIO_Port, SPSGRF_915_SPI3_CSN_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(ISM43362_SPI3_CSN_GPIO_Port, ISM43362_SPI3_CSN_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : M24SR64_Y_RF_DISABLE_Pin M24SR64_Y_GPO_Pin ISM43362_RST_Pin ISM43362_SPI3_CSN_Pin */
@@ -679,9 +676,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(ARD_D6_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ARD_D8_Pin ISM43362_BOOT0_Pin ISM43362_WAKEUP_Pin LED2_Pin
-                           SPSGRF_915_SDN_Pin ARD_D5_Pin SPSGRF_915_SPI3_CSN_Pin */
+                           SPSGRF_915_SDN_Pin ARD_D5_Pin */
   GPIO_InitStruct.Pin = ARD_D8_Pin|ISM43362_BOOT0_Pin|ISM43362_WAKEUP_Pin|LED2_Pin
-                          |SPSGRF_915_SDN_Pin|ARD_D5_Pin|SPSGRF_915_SPI3_CSN_Pin;
+                          |SPSGRF_915_SDN_Pin|ARD_D5_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -1004,7 +1001,7 @@ void collectMeasuresTask(void *argument)
 				printf("Medidas insertadas en la cola.\r\n");
 		}
 	}
-	/* USER CODE END collectMeasuresTask */
+  /* USER CODE END collectMeasuresTask */
 }
 
 /* USER CODE BEGIN Header_MQTTPublishTask */
