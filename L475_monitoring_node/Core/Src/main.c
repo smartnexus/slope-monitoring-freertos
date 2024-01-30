@@ -50,8 +50,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define SSID     "AP@SG31"
-#define PASSWORD "0978653421"
+#define SSID     "Celia"
+#define PASSWORD "holahola"
 #define WIFISECURITY WIFI_ECN_WPA2_PSK
 #define SOCKET 0
 #define WIFI_WRITE_TIMEOUT 10
@@ -110,9 +110,16 @@ const osMessageQueueAttr_t measuresQueue_attributes = {
 /* USER CODE BEGIN PV */
 extern  SPI_HandleTypeDef hspi;
 static  uint8_t  IP_Addr[4];
-static uint8_t operationMode;
+static uint8_t operationMode;						/* Modo de operacion: normal/alarma*/
 static NetworkContext_t xNetworkContext = { 0 };
 static MQTTContext_t xMQTTContext;
+
+bool accControl = false;
+
+uint8_t drdyPulsedCfg = 0;
+uint8_t ctrlDrdy = 0;
+uint8_t ctrlMaster = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -132,6 +139,8 @@ void collectMeasuresTask(void *argument);
 void MQTTPublishTask(void *argument);
 
 /* USER CODE BEGIN PFP */
+void LSM6DSL_AccInt_Drdy(void);							/* Función para la activación de la interrupción Data Ready */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);			/* Función para el callback de la interrupción */
 
 /* USER CODE END PFP */
 
@@ -178,6 +187,13 @@ int main(void)
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   printf("****** Sistemas Ciberfisicos ****** \n\n");
+
+  printf("----> Inicializando el sensor LSM6DSL\r\n");
+  BSP_ACCELERO_Init();									/* Inicialización del acelerómetro */
+  LSM6DSL_AccInt_Drdy();										/* Configuración del acelerómetro*/
+  BSP_ACCELERO_LowPower(0);										/* Deshabilitado del modo de bajo consumo*/
+  printf("----> Sensor LSM6DSL inicializado\r\n");
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -923,15 +939,56 @@ void MQTTSubscribeCallback(char topic[128], char content[128]) {
   * @retval None
   */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-  switch (GPIO_Pin) {
-    case (GPIO_PIN_1): {
-      SPI_WIFI_ISR();
-      break;
-    }
-    default: {
-      break;
-    }
-  }
+	switch (GPIO_Pin) {
+		case (GPIO_PIN_1): {
+			SPI_WIFI_ISR();
+			break;
+		}
+		case (LSM6DSL_INT1_EXTI11_Pin): { /* Comprobación del Pin de Interrupción --> INT1, buscar en main.h */
+			if (accControl == 1)
+				osThreadFlagsSet(collectMeasuresHandle, 0x0002U);
+			break;
+		}
+		default: {
+			break;
+		}
+	}
+}
+
+/* Inicialización del acelerómetro */
+void LSM6DSL_AccInt_Drdy(void) {
+
+	// LEO->APLICO MASCARA->ESCRIBO
+
+	// DRDY_PULSE_CFG_G
+	/* Read DRDY_PULSE_CFG_G value */
+	drdyPulsedCfg = SENSOR_IO_Read(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_DRDY_PULSE_CFG_G); /*Buscar en archivo lsm6dsl.h*/
+
+	/* Set Drdy interruption to INT1  */
+	drdyPulsedCfg |= 0b10000000;
+
+	/* write back control register */
+	SENSOR_IO_Write(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_DRDY_PULSE_CFG_G, drdyPulsedCfg);
+
+	// INT1_CTRL
+	/* Read INT1_CTRL value */
+	ctrlDrdy = SENSOR_IO_Read(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_INT1_CTRL);
+
+	/* Set Drdy interruption to INT1  */
+	ctrlDrdy |= 0b00000001;
+
+	/* write back control register */
+	SENSOR_IO_Write(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_INT1_CTRL, ctrlDrdy);
+
+	// MASTER_CONFIG
+	/* Read MASTER_CONFIG value */
+	ctrlMaster = SENSOR_IO_Read(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_MASTER_CONFIG);
+
+	/* Set Drdy interruption to INT1  */
+	ctrlMaster |= 0b10000000;
+
+	/* write back control register */
+	SENSOR_IO_Write(LSM6DSL_ACC_GYRO_I2C_ADDRESS_LOW, LSM6DSL_ACC_GYRO_MASTER_CONFIG, ctrlMaster);
 }
 
 /**
@@ -1033,6 +1090,8 @@ void collectMeasuresTask(void *argument)
 		// Espera notificación de stopWatchTask
 		flag_state = osThreadFlagsWait(0x0001, osFlagsWaitAll, pdMS_TO_TICKS(80 * 1000));
 
+		accControl = true;
+
 		if (flag_state == osFlagsErrorTimeout)
 			printf("Timeout: espera notificacion.\r\n");
 		else if (flag_state == 0x0001U) {
@@ -1059,10 +1118,36 @@ void collectMeasuresTask(void *argument)
 			printf("Humedad: %d.%02d%%.\r\n", hum_int1, hum_int2);
 
 
-			// TODO Medir acceleración
+			// Medir acceleración
+			// TODO: Ver si hacer media con float
+			int16_t pDataAccAvg[3] = {0, 0, 0};
+
+			for (uint8_t i=0; i<10; i++) {
+				uint32_t flag_acc_state = 0U;
+				int16_t pDataAcc[3];
+
+				flag_acc_state = osThreadFlagsWait(0x0002, osFlagsWaitAll, pdMS_TO_TICKS(1 * 1000));
+
+				if (flag_acc_state == osFlagsErrorTimeout)
+						printf("Timeout: espera notificacion.\r\n");
+				else if (flag_acc_state == 0x0002U) {
+
+					// Obtencion aceleracion en los 3 ejes
+					BSP_ACCELERO_AccGetXYZ(pDataAcc);
+
+					pDataAccAvg[0] += 0.1*pDataAcc[0];
+					pDataAccAvg[1] += 0.1*pDataAcc[1];
+					pDataAccAvg[2] += 0.1*pDataAcc[2];
+				}
+			}
+
+			printf("Aceleracion: Eje_X = %d, Eje_Y = %d, Eje_Z = %d, \r\n", pDataAccAvg[0], pDataAccAvg[1], pDataAccAvg[2]);
+
+			accControl = false;
 
 			// Añadir medidas a la cola de publicación MQTT
-			snprintf(queue_msg, 100, "T:%d.%02d;H:%d.%02d;", temp_int1, temp_int2, hum_int1, hum_int2);
+			// Orden: temperatura, humedad, accX, accY, accZ
+			snprintf(queue_msg, 100, "%d.%02d;%d.%02d;%d;%d;%d", temp_int1, temp_int2, hum_int1, hum_int2,  pDataAccAvg[0], pDataAccAvg[1], pDataAccAvg[2]);
 			queue_state = osMessageQueuePut(measuresQueueHandle, &queue_msg_ptr, 0, pdMS_TO_TICKS(200));
 
 			if (queue_state == osErrorTimeout)
@@ -1102,12 +1187,17 @@ void MQTTPublishTask(void *argument)
 		} else if (queue_state == osOK) {
 			printf("Medidas obtenidadas de la cola: %s\r\n", (uint8_t*) rec);
 
-			separarCadena(rec, ";", datos_rx, 3);
-			printf("%.*s \r\n", strlen(datos_rx[0]+2), (char *) datos_rx[0]+2);
-			printf("%.*s \r\n", strlen(datos_rx[1]+2),(char *) datos_rx[1]+2);
-//			printf("%.*s \r\n", strlen(datos_rx[2]+2),(char *) datos_rx[2]+2);
-			temperatura = datos_rx[0]+2;
-			humedad = datos_rx[1]+2;
+			separarCadena(rec, ";", datos_rx, 5);
+			printf("%.*s \r\n", strlen(datos_rx[0]), (char *) datos_rx[0]);
+			printf("%.*s \r\n", strlen(datos_rx[1]),(char *) datos_rx[1]);
+			printf("%.*s \r\n", strlen(datos_rx[2]),(char *) datos_rx[2]);
+			printf("%.*s \r\n", strlen(datos_rx[3]),(char *) datos_rx[3]);
+			printf("%.*s \r\n", strlen(datos_rx[4]),(char *) datos_rx[4]);
+			temperatura = datos_rx[0];
+			humedad = datos_rx[1];
+			accel_x = datos_rx[2];
+			accel_y = datos_rx[3];
+			accel_z = datos_rx[4];
 
 			publishMeasurements(accel_x, accel_y, accel_z, humedad, temperatura);
 		}
