@@ -48,8 +48,8 @@ extern "C" {
 /* USER CODE BEGIN EM */
 #define MODO_NORMAL_COD 1
 #define MODO_ALARMA_COD 2
-#define MODO_NORMAL "normal"
-#define MODO_ALARMA "alarma"
+#define MODO_NORMAL "1.0"
+#define MODO_ALARMA "2.0"
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

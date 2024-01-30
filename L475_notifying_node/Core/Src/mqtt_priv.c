@@ -83,10 +83,10 @@ void prvCreateMQTTConnectionWithBroker(MQTTContext_t *pxMQTTContext, NetworkCont
 	xConnectInfo.pClientIdentifier = MQTTCLIENT_IDENTIFIER;
 	xConnectInfo.clientIdentifierLength = (uint16_t) strlen(
 	MQTTCLIENT_IDENTIFIER);
-//	xConnectInfo.pUserName = mqttUserName;
-//	xConnectInfo.userNameLength = strlen(mqttUserName);
-//	xConnectInfo.pPassword = mqttPass;
-//	xConnectInfo.passwordLength = strlen(mqttPass);
+	xConnectInfo.pUserName = mqttUserName;
+	xConnectInfo.userNameLength = strlen(mqttUserName);
+	xConnectInfo.pPassword = mqttPass;
+	xConnectInfo.passwordLength = strlen(mqttPass);
 
 	/* Set MQTT keep-alive period. It is the responsibility of the application
 	 * to ensure that the interval between Control Packets being sent does not
