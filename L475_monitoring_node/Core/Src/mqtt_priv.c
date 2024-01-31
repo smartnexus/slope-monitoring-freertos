@@ -121,7 +121,7 @@ void prvMQTTPublishToTopic(MQTTContext_t *pxMQTTContext, char *topic, void *payl
 	/* Send PUBLISH packet. Packet ID is not used for a QoS0 publish. */
 	xResult = MQTT_Publish(pxMQTTContext, &xMQTTPublishInfo, 0U);
 	if (xResult == MQTTSuccess)
-		printf("Published to topic %s\n", topic);
+		printf("Published to topic %s\n\n", topic);
 	//configASSERT( xResult == MQTTSuccess );
 }
 
