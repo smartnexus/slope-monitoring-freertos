@@ -1,5 +1,6 @@
 import json
 import paho.mqtt.client as mqtt
+import math
 
 MQTT_BROKER_ENDPOINT = "industrial.api.ubidots.com"
 MQTT_BROKER_PORT = 1883
@@ -14,13 +15,13 @@ topicHumedad = "/v1.6/devices/monitor_node/humedad/lv"
 topicAnguloX = "/v1.6/devices/monitor_node/angulo_x"
 topicAnguloY = "/v1.6/devices/monitor_node/angulo_y"
 topicEstado = "/v1.6/devices/monitor_node/estado"
-topicModoOperacion = "/v1.6/devices/monitor_node/modod_operacion"
+topicModoOperacion = "/v1.6/devices/monitor_node/modo_operacion"
 
-MODO_OPERACION_NORMAL = 1
-MODO_OPERACION_ALARMA = 2
+MODO_OPERACION_NORMAL = 0
+MODO_OPERACION_ALARMA = 1
 
-TALUD_SALUDABLE = 1
-TALUD_SINIESTRO = 2
+TALUD_SALUDABLE = 0
+TALUD_SINIESTRO = 1
 
 client = mqtt.Client()
 
@@ -30,13 +31,31 @@ def callbackTemperatura(value):
 
 def callbackHumedad(value):
     print("(RX)~[humedad] valor nuevo:", value)
-    if float(value) >= 50.00:
+    if float(value) >= 0.00:#50.00:
         publishModoOperacion(MODO_OPERACION_ALARMA)
     else:
         publishModoOperacion(MODO_OPERACION_NORMAL)
 
 def callbackAceleraciones(x,y,z):
     print("(RX)~[aceleraciones] valores nuevos: x={},y={},z={}".format(x,y,z))
+    
+    ang_x = 90-(math.atan(x/math.sqrt(math.pow(y,2)+math.pow(z,2)))*180)/math.pi
+    ang_y = 90-(math.atan(y/math.sqrt(math.pow(x,2)+math.pow(z,2)))*180)/math.pi
+    publishAngulos(ang_x, ang_y)
+
+def calulateModeLogic(ang_x,ang_y):
+    diff_x = abs(90-ang_x)
+    diff_y = abs(90-ang_y)
+
+    if diff_x>=5 or diff_y>=5:
+        publishModoOperacion(MODO_OPERACION_ALARMA)
+    else:
+        publishModoOperacion(MODO_OPERACION_NORMAL)
+
+    if diff_x>=25 or diff_y>=25:
+        publishEstado(TALUD_SINIESTRO)
+    else:
+        publishEstado(TALUD_SALUDABLE)
 
 def publishModoOperacion(modo):
     if modo == MODO_OPERACION_NORMAL or modo == MODO_OPERACION_ALARMA:
@@ -53,6 +72,9 @@ def publishEstado(estado):
 def publishAngulos(ang_x, ang_y):
     client.publish(topicAnguloX, json.dumps({'value': ang_x}))
     client.publish(topicAnguloY, json.dumps({'value': ang_y}))
+    print("(TX)~[angulos] valores nuevos: x={},y={}".format(round(ang_x,0),round(ang_y,0)))
+    
+    calulateModeLogic(ang_x,ang_y)
 
 ##### CONNECTION HANDLE #####
 
