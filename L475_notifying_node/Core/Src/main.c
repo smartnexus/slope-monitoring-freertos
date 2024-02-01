@@ -40,8 +40,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define SSID     "AP@SG31"
-#define PASSWORD "0978653421"
+#define SSID     "Celia"
+#define PASSWORD "holahola"
 #define WIFISECURITY WIFI_ECN_WPA2_PSK
 #define SOCKET 0
 #define WIFI_WRITE_TIMEOUT 10
