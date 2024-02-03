@@ -899,6 +899,9 @@ void MQTTSubTask(void) {
 	/* Subscripción a los diferentes canales. */
 	prvMQTTSubscribeToTopic(&xMQTTContext, topicModoOperacion);
 	for( ; ; ) {
+		  if (xNetworkContext.socket_open == 0){
+			  break;
+		  }
 	 	MQTT_ProcessLoop(&xMQTTContext); /* Comprueba nuevos mensajes cada segundo */
 		osDelay(pdMS_TO_TICKS(1000));
 	}
@@ -1012,13 +1015,15 @@ void SPI3_IRQHandler(void) {
 void networkSetupTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  wifi_connect();
 
   /* Infinite loop */
   for(;;)
   {
+	  if (xNetworkContext.socket_open == 0){
+		  wifi_connect();
+	  }
+
 	  MQTTSubTask();
-	  osDelay(1);
   }
   /* USER CODE END 5 */
 }
@@ -1034,16 +1039,19 @@ void stopWatchTask(void *argument)
 {
   /* USER CODE BEGIN stopWatchTask */
 	// Modo de operacion por defecto
-	operationMode = MODO_NORMAL_COD;
+	operationMode = MODO_ALARMA_COD;
+
 	/* Infinite loop */
 	for (;;) {
 
+
+		printf("\nEsperando ...\n\n");
 		// Esperamos el tiempo de modo alarma (20 segundos)
 		osDelay(pdMS_TO_TICKS((TIEMPO_MODO_ALARMA)*1000));
 
 		// Comprobamos el modo de operacion.
 		// Si modo normal, esperamos 40 segundos mas para llegar a los 60 segundos
-		printf("MODO_OPERACION: %d\r\n", operationMode);
+		printf("\nMODO_OPERACION: %d\r\n", operationMode);
 
 		if (operationMode == MODO_NORMAL_COD) {
 			osDelay(pdMS_TO_TICKS((TIEMPO_MODO_NORMAL-TIEMPO_MODO_ALARMA)*1000));
@@ -1052,6 +1060,7 @@ void stopWatchTask(void *argument)
 		// Enviamos notificacion para que comiencen las mediciones
 		printf("Enviando notificacion 0x0001...\r\n");
 		osThreadFlagsSet(collectMeasuresHandle, 0x0001U);
+
 	}
   /* USER CODE END stopWatchTask */
 }
@@ -1191,11 +1200,6 @@ void MQTTPublishTask(void *argument)
 			printf("Medidas obtenidadas de la cola: %s\r\n", (uint8_t*) rec);
 
 			separarCadena(rec, ";", datos_rx, 5);
-//			printf("%.*s \r\n", strlen(datos_rx[0]), (char *) datos_rx[0]);
-//			printf("%.*s \r\n", strlen(datos_rx[1]),(char *) datos_rx[1]);
-//			printf("%.*s \r\n", strlen(datos_rx[2]),(char *) datos_rx[2]);
-//			printf("%.*s \r\n", strlen(datos_rx[3]),(char *) datos_rx[3]);
-//			printf("%.*s \r\n", strlen(datos_rx[4]),(char *) datos_rx[4]);
 			temperatura = datos_rx[0];
 			humedad = datos_rx[1];
 			accel_x = datos_rx[2];
