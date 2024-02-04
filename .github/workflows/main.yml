@@ -45,21 +45,21 @@ jobs:
         uses: xanderhendriks/action-build-stm32cubeide@v10.0
         with:
           project-path: 'L475_notifying_node'
-          project-target: 'L475_notifying_node'
+          project-target: 'L475_notifying_node/Debug'
         env:
           ENV_VERSION_MAJOR: ${{ steps.version_handling.outputs.major }}
           ENV_VERSION_MINOR: ${{ steps.version_handling.outputs.minor }}
           ENV_VERSION_BUGFIX: ${{ steps.version_handling.outputs.bugfix }}
           ENV_SHORT_GIT_HASH: ${{ steps.short-sha.outputs.sha }}
-      - name: Rename and copy files
-        run: |
-          mkdir stm32-firmware
-          cp applications/sample_application/targets/STM32/Release/sample_application.bin stm32-firmware/sample_application-${{ steps.version_handling.outputs.file_postfix }}.bin
-          cp applications/sample_application/targets/STM32/Release/sample_application.elf stm32-firmware/sample_application-${{ steps.version_handling.outputs.file_postfix }}.elf
-          cp applications/sample_application/targets/STM32/Release/sample_application.list stm32-firmware/sample_application-${{ steps.version_handling.outputs.file_postfix }}.list
-          cp applications/sample_application/targets/STM32/Release/sample_application.map stm32-firmware/sample_application-${{ steps.version_handling.outputs.file_postfix }}.map
-      - name: Upload sample_application artifacts
-        uses: actions/upload-artifact@v3.1.0
-        with:
-          name: stm32-firmware-sample_application-${{ steps.version_handling.outputs.file_postfix }}
-          path: stm32-firmware
+#      - name: Rename and copy files
+#        run: |
+#          mkdir stm32-firmware
+#          cp L475_notifying_node/Release/L475_notifying_node.bin stm32-firmware/L475_notifying_node-${{ steps.version_handling.outputs.file_postfix }}.bin
+#          cp L475_notifying_node/Release/L475_notifying_node.elf stm32-firmware/L475_notifying_node-${{ steps.version_handling.outputs.file_postfix }}.elf
+#          cp L475_notifying_node/Release/L475_notifying_node.list stm32-firmware/L475_notifying_node-${{ steps.version_handling.outputs.file_postfix }}.list
+#          cp L475_notifying_node/Release/L475_notifying_node.map stm32-firmware/L475_notifying_node-${{ steps.version_handling.outputs.file_postfix }}.map
+#      - name: Upload sample_application artifacts
+#        uses: actions/upload-artifact@v3.1.0
+#        with:
+#          name: stm32-firmware-sample_application-${{ steps.version_handling.outputs.file_postfix }}
+#          path: stm32-firmware
