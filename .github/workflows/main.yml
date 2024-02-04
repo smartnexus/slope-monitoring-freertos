@@ -5,7 +5,7 @@ on:
       - main
    pull_request:
 jobs:
-   build-L475_monitoring_node:
+    build-L475_monitoring_node:
       name: Build the L475_monitoring_node binary
       runs-on: ubuntu-20.04
       steps:
@@ -61,7 +61,7 @@ jobs:
         with:
           name: stm32-firmware-L475_monitoring_node-${{ steps.version_handling.outputs.file_postfix }}
           path: stm32-firmware
-   build-L475_notifying_node:
+    build-L475_notifying_node:
       name: Build the L475_notifying_node binary
       runs-on: ubuntu-20.04
       steps:
@@ -117,3 +117,36 @@ jobs:
         with:
           name: stm32-firmware-L475_notifying_node-${{ steps.version_handling.outputs.file_postfix }}
           path: stm32-firmware
+    release:
+      needs: [build-L475_notifying_node, build-L475_monitoring_node]
+      name: Release packages to Github
+      runs-on: ubuntu-20.04
+      steps:
+        - name: Download artifacts
+          uses: actions/download-artifact@v3.0.1
+          with:
+            path: stm32-firmware
+        - name: Determine version
+          id: determine_version
+          run: |
+            if [ -n "$(find stm32-firmware -name 'stm32-firmware-L475_notifying_node-*-dev')" ]
+            then
+                version=0.0.0
+                file_postfix=$(find stm32-firmware -name "stm32-firmware-L475_notifying_node-*" | sed 's/stm32-firmware\/stm32-firmware-L475_notifying_node-\(.*\)/\1/')
+            else
+                version=$(find stm32-firmware -name "stm32-firmware-L475_notifying_node-*" | sed 's/stm32-firmware\/stm32-firmware-L475_notifying_node-\([0-9\.]*\)/\1/')
+                file_postfix=$version
+            fi
+            echo "version=$version" >> $GITHUB_OUTPUT
+            echo "file_postfix=$file_postfix" >> $GITHUB_OUTPUT
+        - name: Release to Github
+          id: create_release
+          uses: ncipollo/release-action@v1.11.1
+          with:
+            token: ${{ secrets.GITHUB_TOKEN }}
+            tag: v${{ steps.determine_version.outputs.file_postfix }}
+            name: v${{ steps.determine_version.outputs.file_postfix }}
+            commit: ${{ github.sha }}
+            draft: false
+            prerelease: false
+            artifacts: "stm32-firmware/stm32-firmware-*/*"
