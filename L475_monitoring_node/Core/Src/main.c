@@ -99,13 +99,37 @@ const osThreadAttr_t collectMeasures_attributes = {
 osThreadId_t MQTTPublishHandle;
 const osThreadAttr_t MQTTPublish_attributes = {
   .name = "MQTTPublish",
-  .stack_size = 512 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for inputConfig */
+osThreadId_t inputConfigHandle;
+const osThreadAttr_t inputConfig_attributes = {
+  .name = "inputConfig",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityHigh2,
+};
+/* Definitions for printUART */
+osThreadId_t printUARTHandle;
+const osThreadAttr_t printUART_attributes = {
+  .name = "printUART",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityHigh1,
 };
 /* Definitions for measuresQueue */
 osMessageQueueId_t measuresQueueHandle;
 const osMessageQueueAttr_t measuresQueue_attributes = {
   .name = "measuresQueue"
+};
+/* Definitions for receiveQueue */
+osMessageQueueId_t receiveQueueHandle;
+const osMessageQueueAttr_t receiveQueue_attributes = {
+  .name = "receiveQueue"
+};
+/* Definitions for printQueue */
+osMessageQueueId_t printQueueHandle;
+const osMessageQueueAttr_t printQueue_attributes = {
+  .name = "printQueue"
 };
 /* USER CODE BEGIN PV */
 extern  SPI_HandleTypeDef hspi;
@@ -119,6 +143,10 @@ bool ctrlAcceleration = false; /* Controla el envío de la notificación en el c
 uint8_t drdyPulsedCfg = 0;
 uint8_t ctrlDrdy = 0;
 uint8_t ctrlMaster = 0;
+
+uint8_t rec_data;		/* Almacena el caracter recibido por UART */
+RTC_DateTypeDef GetDate; 		/* Estructura para fijar/leer fecha */
+RTC_TimeTypeDef GetTime;		/* Estructura para fijar/leer hora */
 
 /* USER CODE END PV */
 
@@ -137,6 +165,8 @@ void networkSetupTask(void *argument);
 void stopWatchTask(void *argument);
 void collectMeasuresTask(void *argument);
 void MQTTPublishTask(void *argument);
+void inputConfigTask(void *argument);
+void printUARTTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 void LSM6DSL_AccInt_Drdy(void);							/* Función para la activación de la interrupción Data Ready */
@@ -146,6 +176,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);			/* Función para el callback d
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void osMessageQueuePutChecker(char *nombre_tarea, char *nombre_cola, osStatus_t estado);
+void leerDatosCola(char * recibido);
+uint8_t extraerNumero(char *digitos, uint8_t *rango);
+void publishMeasurements(char *accel_x, char *accel_y, char *accel_z, char *humedad, char *temperatura);
+void separarCadena(char *cadena, char *delimitador, char *partes[], int numPartes);
+void MQTTSubTask(void);
+
 
 /* USER CODE END 0 */
 
@@ -187,6 +224,8 @@ int main(void)
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   printf("****** Sistemas Ciberfisicos ****** \n\n");
+  // Activamos la interrupcion UART_RECEIVE antes de arrancar el scheduler
+  HAL_UART_Receive_IT(&huart1, &rec_data, 1);
 
   printf("----> Inicializando el sensor LSM6DSL\r\n");
   BSP_ACCELERO_Init();									        /* Inicialización del acelerómetro */
@@ -215,6 +254,12 @@ int main(void)
   /* creation of measuresQueue */
   measuresQueueHandle = osMessageQueueNew (3, sizeof(uintptr_t), &measuresQueue_attributes);
 
+  /* creation of receiveQueue */
+  receiveQueueHandle = osMessageQueueNew (3, sizeof(char), &receiveQueue_attributes);
+
+  /* creation of printQueue */
+  printQueueHandle = osMessageQueueNew (8, sizeof(uintptr_t), &printQueue_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -231,6 +276,12 @@ int main(void)
 
   /* creation of MQTTPublish */
   MQTTPublishHandle = osThreadNew(MQTTPublishTask, NULL, &MQTTPublish_attributes);
+
+  /* creation of inputConfig */
+  inputConfigHandle = osThreadNew(inputConfigTask, NULL, &inputConfig_attributes);
+
+  /* creation of printUART */
+  printUARTHandle = osThreadNew(printUARTTask, NULL, &printUART_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -927,6 +978,59 @@ void publishMeasurements(char *accel_x, char *accel_y, char *accel_z, char *hume
     prvMQTTPublishToTopic(&xMQTTContext, topicGeneral, payload);
 }
 
+/* Funcion para leer de la cola de recepcion y formar el mensaje recibido por UART */
+void leerDatosCola(char * recibido) {
+	bool leer_cola = true;
+	uint8_t num_msg_leido = 0;
+	char rec;
+	osStatus_t estado;
+
+	while (leer_cola) {
+		estado = osMessageQueueGet(receiveQueueHandle, &rec, NULL, pdMS_TO_TICKS(200));
+
+		if (estado == osOK) {
+			printf("[RTC_set] (%c) leido de receive_queue\r\n", rec);
+
+			if ('\n' == rec || '\r' == rec) {
+				recibido[num_msg_leido] = '\0'; // fin de string
+				leer_cola = false;
+			} else {
+				recibido[num_msg_leido] = rec;
+				num_msg_leido++;
+			}
+		} else if (estado == osErrorTimeout) {
+			printf("[RTC_set] Timeout lectura receive_queue\r\n");
+		}
+	}
+}
+
+/* Funcion para extraer un número de una cadena de dígitos en formato ASCII y verificar si
+ * ese número se encuentra dentro de un rango especificado. Si devuelve 255 significa que
+ * el numero no es valido*/
+uint8_t extraerNumero(char *digitos, uint8_t *rango) {
+	int valor;
+
+	// Cada dígito se resta por el valor ASCII del '0' (48) para obtener su valor numérico
+	if (strlen(digitos) > 1)
+		valor = (((digitos[0] - 48) * 10) + (digitos[1] - 48));
+	else
+		valor = digitos[0] - 48;
+
+	// Se verifica si el número se encuentra dentro del rando admisible
+	if (valor < rango[0] || valor > rango[1])
+		valor = 255; // Si devuelve 255 significa que el numero no es valido
+	return valor;
+}
+
+/* Comprobacion escritura en cola*/
+void osMessageQueuePutChecker(char *nombre_tarea, char *nombre_cola, osStatus_t estado) {
+	if (estado == osOK)
+		printf("[%s] Msg enviado a %s\r\n", nombre_tarea, nombre_cola);
+	else if (estado == osErrorTimeout)
+		printf("[%s] Timeout put %s agotado\r\n", nombre_tarea, nombre_cola);
+}
+
+/**/
 void MQTTSubscribeCallback(char topic[128], char content[128]) {
 	if (strcmp(topic, topicModoOperacion) == 0) {
 		if (strcmp(content, MODO_NORMAL) == 0)
@@ -955,6 +1059,42 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		default: {
 			break;
 		}
+	}
+}
+
+/* Interrupcion callback UART */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+
+	osStatus_t estado;
+	char dato = (char) rec_data;
+
+	if (huart == &huart1) {
+
+		printf("[UART_IT] Recibido un caracter: %c\r\n", rec_data);
+
+		// Enviar mensaje a la cola de recepcion
+		estado = osMessageQueuePut(receiveQueueHandle, &dato, 0, 0);
+
+		if (estado == osOK) {
+			printf("[UART_IT] Put (%c) en receive_queue\r\n", dato);
+
+			if (rec_data == '\r' || rec_data == '\n') {
+				// Envia notificacion a RTC_set si el caracter implica finalizacion de linea
+				osThreadFlagsSet(inputConfigHandle, 0x0004U);
+				printf("[UART_IT] Notificacion flag 4 a RTC_set\r\n");
+			}
+
+		} else if (estado == osErrorResource) {
+			printf("[UART_IT] Overflow en receive_queue\r\n");
+			// Envia notificacion a RTC_set si no se ha podido añadir a la cola (overflow)
+			osThreadFlagsSet(inputConfigHandle, 0x0008U);
+			printf("[UART_IT] Notificacion flag 8 a RTC_set\r\n");
+		} else if (estado == osErrorTimeout) {
+			printf("[UART_IT] Timeout put (%c) en receive_queue\r\n", dato);
+		}
+
+		// Reactivamos la interrupcion UART_RECEIVE
+		HAL_UART_Receive_IT(&huart1, &rec_data, 1);
 	}
 }
 
@@ -1041,11 +1181,14 @@ void stopWatchTask(void *argument)
 	// Modo de operacion por defecto
 	operationMode = MODO_ALARMA_COD;
 
+	// Espera a que el RTC este inicializado
+	while (osThreadFlagsWait(0x0010U, osFlagsWaitAll, pdMS_TO_TICKS(20000)) != 0x0010U) {
+		printf("Esperando a que se inicialice RTC\r\n");
+	}
+
 	/* Infinite loop */
 	for (;;) {
 
-
-		printf("\nEsperando ...\n\n");
 		// Esperamos el tiempo de modo alarma (20 segundos)
 		osDelay(pdMS_TO_TICKS((TIEMPO_MODO_ALARMA)*1000));
 
@@ -1075,7 +1218,7 @@ void stopWatchTask(void *argument)
 void collectMeasuresTask(void *argument)
 {
   /* USER CODE BEGIN collectMeasuresTask */
-	uint32_t flag_state = 0U;
+  uint32_t flag_state = 0U;
 	osStatus_t queue_state;
 	char queue_msg[100] = "";
 	char *queue_msg_ptr = queue_msg; // Puntero a queue_msg
@@ -1096,15 +1239,17 @@ void collectMeasuresTask(void *argument)
 
 	/* Infinite loop */
 	for (;;) {
+
 		// Espera notificación de stopWatchTask
 		flag_state = osThreadFlagsWait(0x0001, osFlagsWaitAll, pdMS_TO_TICKS(80 * 1000));
 
-		ctrlAcceleration = true;
 
 		if (flag_state == osFlagsErrorTimeout)
 			printf("Timeout: espera notificacion.\r\n");
 		else if (flag_state == 0x0001U) {
 			printf("Notificacion recibida.\r\n");
+
+			ctrlAcceleration = true;
 
 			// Medir tempetarura
 			float temp_float = BSP_TSENSOR_ReadTemp();
@@ -1210,6 +1355,145 @@ void MQTTPublishTask(void *argument)
 		}
 	}
   /* USER CODE END MQTTPublishTask */
+}
+
+/* USER CODE BEGIN Header_inputConfigTask */
+/**
+* @brief Function implementing the inputConfig thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_inputConfigTask */
+void inputConfigTask(void *argument) {
+	/* USER CODE BEGIN inputConfigTask */
+	osStatus_t estado;
+	uint32_t flag_rec;
+	char recibido[3];
+	const char *msg_hora_ok = "\r\nHora cambiada correctamente\r\n";
+	const char *msg_fecha_ok = "Fecha cambiada correctamente\r\n";
+	const char *msg_error = "\r\nERROR: Valor no válido\r\n";
+	const char *msg_rtc1 = "\r\n\r\n========================\r\n"
+			"| Configurar rtc |\r\n"
+			"========================\r\n\r\n";
+	const char *msg_fin = "fin";
+	const char *msg[6] = { "Hora (0-23): ", "\r\nMinuto (0-59): ",
+			"\r\nSegundo (0-59): ", "\r\nDía (1-31): ", "\r\nMes (1-12): ",
+			"\r\nAño (0-99): " };
+	uint8_t limit[6][2] = { { 0, 23 }, { 0, 59 }, { 0, 59 }, { 1, 31 },
+			{ 1, 12 }, { 0, 99 } };
+	uint8_t *toChange[6] = { &GetTime.Hours, &GetTime.Minutes, &GetTime.Seconds,
+			&GetDate.Date, &GetDate.Month, &GetDate.Year };
+
+	uint8_t num_msg = 0;
+
+	/* Infinite loop */
+	for (;;) {
+
+		if (num_msg == 0) {
+			// Primer mensaje
+			estado = osMessageQueuePut(printQueueHandle, &msg_rtc1, 0, pdMS_TO_TICKS(200));
+			osMessageQueuePutChecker("RTC_set", "print_queue", estado);
+		}
+
+		if (num_msg < 6) {
+			// Mensajes de configuracion
+			estado = osMessageQueuePut(printQueueHandle, &msg[num_msg], 0, pdMS_TO_TICKS(200));
+			osMessageQueuePutChecker("RTC_set", "print_queue", estado);
+
+			// ESPERA NOTIFICACION EN FLAG 4 u 8 (0000 1100)
+			flag_rec = osThreadFlagsWait(0x000CU, osFlagsWaitAny, osWaitForever); // TODO: pongo timeout?
+
+			switch (flag_rec) {
+			case 0x0004U: 	// FLAG 4: se han recibido todos los datos
+				// LECTURA DATO DE LA COLA
+				leerDatosCola(recibido);
+
+				// COMPROBACION DATO CORRECTO
+				uint8_t to_change = extraerNumero(recibido, limit[num_msg]);
+				if (to_change != 255) {
+					// Si el numero es correcto, se actualiza el valor de las variables GetTime/GetDate
+					*(toChange[num_msg]) = to_change;
+					num_msg++;
+
+				} else {
+					// Si numero recibido no es valido se comienza de nuevo
+					num_msg = 0;
+					estado = osMessageQueuePut(printQueueHandle, &msg_error, 0,
+							pdMS_TO_TICKS(200));
+					osMessageQueuePutChecker("RTC_set", "print_queue", estado);
+				}
+				break;
+
+			case 0x0008U: // FLAG 8: Overflow en la cola
+				estado = osMessageQueuePut(printQueueHandle, &msg_error, 0,
+						pdMS_TO_TICKS(200));
+				osMessageQueuePutChecker("RTC_set", "print_queue", estado);
+				num_msg = 0;
+				// Se resetea la cola de recepcion para comenzar de nuevo
+				osMessageQueueReset(receiveQueueHandle);
+				break;
+
+			default:
+				break;
+			}
+		} else if (num_msg == 6) {
+			// FECHA Y HORA CORRECTAS
+			estado = osMessageQueuePut(printQueueHandle, &msg_hora_ok, 0, pdMS_TO_TICKS(200));
+			osMessageQueuePutChecker("RTC_set", "print_queue", estado);
+			estado = osMessageQueuePut(printQueueHandle, &msg_fecha_ok, 0, pdMS_TO_TICKS(200));
+			osMessageQueuePutChecker("RTC_set", "print_queue", estado);
+
+			// Fija fecha y hora de RTC
+			HAL_RTC_SetTime(&hrtc, &GetTime, RTC_FORMAT_BIN);
+			HAL_RTC_SetDate(&hrtc, &GetDate, RTC_FORMAT_BIN);
+
+			// Se envía notificación a la tarea stopWatch para que comience a muestrear la temperatura
+			osThreadFlagsSet(stopWatchHandle, 0x0010U);
+			printf("[RTC_set] Notificacion flag 0 a temp_task\r\n");
+
+			estado = osMessageQueuePut(printQueueHandle, &msg_fin, 0, pdMS_TO_TICKS(200));
+			osMessageQueuePutChecker("RTC_set", "print_queue", estado);
+
+
+			// Tarea se suspende a sí misma para no solicitar otra vez fecha/hora
+			printf("[RTC_set] Tarea se suspende a si misma\r\n");
+			osThreadSuspend(inputConfigHandle);
+		}
+		/* USER CODE END inputConfigTask */
+	}
+}
+
+/* USER CODE BEGIN Header_printUARTTask */
+/**
+* @brief Function implementing the printUART thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_printUARTTask */
+void printUARTTask(void *argument)
+{
+  /* USER CODE BEGIN printUARTTask */
+	osStatus_t estado;
+	char *rec;
+	char msg[100] = "";
+
+	/* Infinite loop */
+	for (;;) {
+		estado = osMessageQueueGet(printQueueHandle, &rec, NULL,0);
+
+		if (estado == osOK) {
+			if (strcmp("fin", rec) == 0){
+				osThreadSuspend(printUARTHandle);
+			}
+			HAL_UART_Transmit(&huart1, (uint8_t*) rec, strlen(rec), 1000);
+
+		} else if (estado == osErrorTimeout) {
+			snprintf(msg, 100, "Timeout lectura print_queue\r\n");
+
+			HAL_UART_Transmit(&huart1, (uint8_t*) msg, sizeof(msg), 1000);
+		}
+	}
+  /* USER CODE END printUARTTask */
 }
 
 /**
