@@ -2,11 +2,11 @@
 CAD.formats=
 CAD.pinconfig=
 CAD.provider=
-FREERTOS.FootprintOK=true
+FREERTOS.FootprintOK=false
 FREERTOS.IPParameters=Tasks01,configUSE_NEWLIB_REENTRANT,configTOTAL_HEAP_SIZE,FootprintOK,Queues01
 FREERTOS.Queues01=measuresQueue,3,uintptr_t,0,Dynamic,NULL,NULL;receiveQueue,3,char,0,Dynamic,NULL,NULL;printQueue,8,uintptr_t,0,Dynamic,NULL,NULL
-FREERTOS.Tasks01=networkSetup,16,512,networkSetupTask,Default,NULL,Dynamic,NULL,NULL;stopWatch,40,128,stopWatchTask,Default,NULL,Dynamic,NULL,NULL;collectMeasures,32,512,collectMeasuresTask,Default,NULL,Dynamic,NULL,NULL;MQTTPublish,8,256,MQTTPublishTask,Default,NULL,Dynamic,NULL,NULL;inputConfig,42,256,inputConfigTask,Default,NULL,Dynamic,NULL,NULL;printUART,41,128,printUARTTask,Default,NULL,Dynamic,NULL,NULL
-FREERTOS.configTOTAL_HEAP_SIZE=9000
+FREERTOS.Tasks01=networkSetup,16,512,networkSetupTask,Default,NULL,Dynamic,NULL,NULL;stopWatch,40,256,stopWatchTask,Default,NULL,Dynamic,NULL,NULL;collectMeasures,32,1024,collectMeasuresTask,Default,NULL,Dynamic,NULL,NULL;MQTTPublish,8,256,MQTTPublishTask,Default,NULL,Dynamic,NULL,NULL;inputConfig,42,256,inputConfigTask,Default,NULL,Dynamic,NULL,NULL;printUART,41,128,printUARTTask,Default,NULL,Dynamic,NULL,NULL
+FREERTOS.configTOTAL_HEAP_SIZE=10000
 FREERTOS.configUSE_NEWLIB_REENTRANT=1
 File.Version=6
 GPIO.groupedBy=Group By Peripherals

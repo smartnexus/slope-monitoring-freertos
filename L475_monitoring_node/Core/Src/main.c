@@ -50,8 +50,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define SSID     "Celia"
-#define PASSWORD "holahola"
+#define SSID     "DIGIFIBRA-HAeH"
+#define PASSWORD "uxHXKubx5D"
 #define WIFISECURITY WIFI_ECN_WPA2_PSK
 #define SOCKET 0
 #define WIFI_WRITE_TIMEOUT 10
@@ -85,14 +85,14 @@ const osThreadAttr_t networkSetup_attributes = {
 osThreadId_t stopWatchHandle;
 const osThreadAttr_t stopWatch_attributes = {
   .name = "stopWatch",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for collectMeasures */
 osThreadId_t collectMeasuresHandle;
 const osThreadAttr_t collectMeasures_attributes = {
   .name = "collectMeasures",
-  .stack_size = 512 * 4,
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityAboveNormal,
 };
 /* Definitions for MQTTPublish */
@@ -1182,6 +1182,7 @@ void stopWatchTask(void *argument)
 	operationMode = MODO_ALARMA_COD;
 
 	// Espera a que el RTC este inicializado
+	// ESPERA NOTIFICACION EN FLAG 16 (0001 0000)
 	while (osThreadFlagsWait(0x0010U, osFlagsWaitAll, pdMS_TO_TICKS(20000)) != 0x0010U) {
 		printf("Esperando a que se inicialice RTC\r\n");
 	}
@@ -1364,8 +1365,9 @@ void MQTTPublishTask(void *argument)
 * @retval None
 */
 /* USER CODE END Header_inputConfigTask */
-void inputConfigTask(void *argument) {
-	/* USER CODE BEGIN inputConfigTask */
+void inputConfigTask(void *argument)
+{
+  /* USER CODE BEGIN inputConfigTask */
 	osStatus_t estado;
 	uint32_t flag_rec;
 	char recibido[3];
@@ -1458,9 +1460,10 @@ void inputConfigTask(void *argument) {
 			// Tarea se suspende a sí misma para no solicitar otra vez fecha/hora
 			printf("[RTC_set] Tarea se suspende a si misma\r\n");
 			osThreadSuspend(inputConfigHandle);
+			osThreadSuspend(inputConfigHandle);
 		}
-		/* USER CODE END inputConfigTask */
 	}
+  /* USER CODE END inputConfigTask */
 }
 
 /* USER CODE BEGIN Header_printUARTTask */
