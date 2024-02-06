@@ -72,6 +72,8 @@ const osThreadAttr_t ledsBlink_attributes = { .name = "ledsBlink", .stack_size =
 extern SPI_HandleTypeDef hspi;
 static uint8_t IP_Addr[4];
 static uint8_t operationMode;
+NetworkContext_t xNetworkContext = { 0 };
+MQTTContext_t xMQTTContext;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -719,8 +721,6 @@ int wifi_connect(void) {
 	return 0;
 }
 void MQTTSubTask(void) {
-	NetworkContext_t xNetworkContext = { 0 };
-	MQTTContext_t xMQTTContext;
 	TransportStatus_t xNetworkStatus;
 	/* Conexión al broker específico */
 	xNetworkStatus = prvConnectToServer(&xNetworkContext);
@@ -729,6 +729,9 @@ void MQTTSubTask(void) {
 	/* Subscripción a los diferentes canales. */
 	prvMQTTSubscribeToTopic(&xMQTTContext, topicModoOperacion);
 	for (;;) {
+		if (xNetworkContext.socket_open == 0) {
+			break;
+		}
 		MQTT_ProcessLoop(&xMQTTContext); /* Comprueba nuevos mensajes cada segundo */
 		osDelay(pdMS_TO_TICKS(1000));
 	}
@@ -779,12 +782,14 @@ void SPI3_IRQHandler(void) {
 /* USER CODE END Header_networkSetupTask */
 void networkSetupTask(void *argument) {
 	/* USER CODE BEGIN 5 */
-	wifi_connect();
-	/* Infinite loop */
-	for (;;) {
-		MQTTSubTask();
-		osDelay(1);
-	}
+	  for(;;)
+	  {
+		  if (xNetworkContext.socket_open == 0){
+			  wifi_connect();
+		  }
+
+		  MQTTSubTask();
+	  }
 	/* USER CODE END 5 */
 }
 
